@@ -1,209 +1,396 @@
 # Refund Management System
 
-A refund management module for handling full refunds, partial refunds, refund approvals, payment reversals, balance adjustments, and refund status tracking.
+> A structured refund module for Checkout and Payout platforms, supporting full refunds, partial refunds, approval workflows, Stripe Connect reversals, balance adjustments, and financial audit trails.
 
-This module is designed to work with the existing Checkout and Payout platform using Stripe.
+---
 
-## Overview
+## Table of Contents
 
-The Refund system allows customers, administrators, and sellers to manage refund requests securely and consistently.
+- [1. Overview](#1-overview)
+- [2. Core Features](#2-core-features)
+- [3. System Architecture](#3-system-architecture)
+- [4. Refund Lifecycle](#4-refund-lifecycle)
+- [5. Refund Types](#5-refund-types)
+- [6. Business Rules](#6-business-rules)
+- [7. Financial Calculation](#7-financial-calculation)
+- [8. Data Model](#8-data-model)
+- [9. API Design](#9-api-design)
+- [10. Stripe Integration](#10-stripe-integration)
+- [11. Balance and Payout Protection](#11-balance-and-payout-protection)
+- [12. Webhook Processing](#12-webhook-processing)
+- [13. Idempotency and Concurrency](#13-idempotency-and-concurrency)
+- [14. Failure Handling](#14-failure-handling)
+- [15. Security and Audit](#15-security-and-audit)
+- [16. Notifications](#16-notifications)
+- [17. Project Structure](#17-project-structure)
+- [18. Environment Variables](#18-environment-variables)
+- [19. Local Development](#19-local-development)
+- [20. Testing Strategy](#20-testing-strategy)
+- [21. Development Roadmap](#21-development-roadmap)
+- [22. Design Principles](#22-design-principles)
 
-The system supports:
+---
 
-- Full refunds
-- Partial refunds
-- Multiple partial refunds
-- Refund request approval
-- Refund rejection
-- Refund status tracking
-- Seller balance adjustments
-- Platform fee adjustments
-- Payout protection
-- Refund notifications
-- Refund audit logs
+## 1. Overview
 
-## Refund Flow
+The Refund Management System handles the complete refund process after a successful checkout payment.
+
+It connects the following financial components:
 
 ```text
-Customer
-   │
-   ▼
-Submit Refund Request
-   │
-   ▼
-Backend API
-   │
-   ├── Validate Order
-   ├── Validate Payment
-   ├── Check Refund Eligibility
-   ├── Calculate Refund Amount
-   └── Create Refund Request
-   │
-   ▼
-Admin or Seller Review
-   │
-   ├── Approve Refund
-   └── Reject Refund
-   │
-   ▼
-Stripe Refund API
-   │
-   ▼
-Stripe Webhook
-   │
-   ├── Verify Refund Status
-   ├── Update Payment
-   ├── Update Order
-   ├── Adjust Seller Balance
-   ├── Adjust Platform Fee
-   └── Create Ledger Entries
-   │
-   ▼
-Customer Notification
+Checkout Payment
+      │
+      ▼
+Refund Request
+      │
+      ▼
+Review and Approval
+      │
+      ▼
+Stripe Refund
+      │
+      ├── Customer reimbursement
+      ├── Seller balance adjustment
+      ├── Transfer reversal
+      ├── Platform fee adjustment
+      └── Ledger reconciliation
+      │
+      ▼
+Payout Protection
 ```
 
-## Architecture
+### Primary Actors
+
+| Actor | Responsibility |
+|---|---|
+| Customer | Creates and tracks refund requests |
+| Seller | Reviews requests related to seller orders |
+| Administrator | Reviews, overrides, retries, and audits refunds |
+| Refund Service | Validates and processes refund operations |
+| Stripe | Processes external payment refunds |
+| Ledger Service | Records immutable financial movements |
+| Payout Service | Prevents reserved funds from being paid out |
+
+---
+
+## 2. Core Features
+
+### Customer Experience
+
+- Submit refund requests
+- Select full or partial refund
+- Select affected order items
+- Upload supporting evidence
+- Cancel eligible requests
+- Track refund status
+- Receive refund notifications
+
+### Seller Operations
+
+- Review refund requests
+- Approve or reject requests
+- Review customer evidence
+- View balance deductions
+- Track transfer reversals
+- View refund history
+
+### Administrator Operations
+
+- Review all refund requests
+- Override seller decisions
+- Create manual refunds
+- Retry failed refunds
+- Review negative balances
+- Inspect Stripe events
+- Access audit logs and reconciliation reports
+
+### Financial Controls
+
+- Full and partial refunds
+- Multiple partial refunds
+- Server-side amount validation
+- Seller balance reservation
+- Stripe Connect transfer reversal
+- Platform fee adjustment
+- Immutable ledger entries
+- Duplicate refund prevention
+- Payout protection
+- Negative balance recovery
+
+---
+
+## 3. System Architecture
+
+### 3.1 High-Level Architecture
+
+```mermaid
+flowchart LR
+    C[Customer] --> UI[Refund UI]
+    S[Seller] --> UI
+    A[Administrator] --> UI
+
+    UI --> API[Refund API]
+
+    API --> AUTH[Authentication Service]
+    API --> ORDER[Order Service]
+    API --> PAYMENT[Payment Service]
+    API --> REFUND[Refund Service]
+
+    REFUND --> DB[(PostgreSQL)]
+    REFUND --> QUEUE[(Redis / BullMQ)]
+    REFUND --> STRIPE[Stripe API]
+    REFUND --> LEDGER[Ledger Service]
+    REFUND --> BALANCE[Balance Service]
+    REFUND --> NOTIFY[Notification Service]
+
+    STRIPE --> WEBHOOK[Stripe Webhook Handler]
+    WEBHOOK --> REFUND
+    WEBHOOK --> LEDGER
+    WEBHOOK --> BALANCE
+
+    BALANCE --> PAYOUT[Payout Service]
+```
+
+### 3.2 Architecture Layers
 
 ```text
-Frontend
-├── Refund Request Form
-├── Order Details
-├── Refund Status Page
+Presentation Layer
+├── Customer Refund Form
+├── Refund Details Page
+├── Refund Status Timeline
 ├── Seller Refund Dashboard
 └── Admin Refund Dashboard
 
-Backend API
-├── Authentication Service
-├── Order Service
-├── Payment Service
-├── Refund Service
-├── Balance Service
-├── Ledger Service
-├── Notification Service
-└── Webhook Service
+Application Layer
+├── Refund Request Use Cases
+├── Review and Approval Use Cases
+├── Refund Execution Use Cases
+├── Retry and Recovery Use Cases
+└── Notification Use Cases
 
-Infrastructure
+Domain Layer
+├── Refund Eligibility Rules
+├── Refund Amount Rules
+├── Refund State Machine
+├── Balance Reservation Rules
+└── Ledger Posting Rules
+
+Infrastructure Layer
 ├── PostgreSQL
+├── Prisma ORM
 ├── Redis
+├── BullMQ Workers
 ├── Stripe API
-├── Background Workers
-├── Email Service
+├── Object Storage
+├── Email Provider
 └── Logging and Monitoring
 ```
 
-## Suggested Technology Stack
+### 3.3 Recommended Technology Stack
 
-### Frontend
+| Layer | Recommended Technology |
+|---|---|
+| Frontend | Next.js, React, TypeScript, Tailwind CSS |
+| Backend | Node.js, TypeScript, NestJS or Express |
+| Database | PostgreSQL |
+| ORM | Prisma |
+| Queue | Redis and BullMQ |
+| Payment Provider | Stripe |
+| File Storage | Amazon S3 or compatible storage |
+| Validation | Zod or class-validator |
+| Testing | Vitest or Jest, Supertest, Playwright |
+| Monitoring | OpenTelemetry, Sentry, structured logs |
 
-- Next.js
-- React
-- TypeScript
-- Tailwind CSS
+---
 
-### Backend
+## 4. Refund Lifecycle
 
-- Node.js
-- TypeScript
-- Express or NestJS
-- PostgreSQL
-- Prisma ORM
-- Redis
-- BullMQ
+### 4.1 Main Processing Flow
 
-### Payment Infrastructure
+```mermaid
+sequenceDiagram
+    participant Customer
+    participant API
+    participant RefundService
+    participant Database
+    participant Stripe
+    participant Webhook
+    participant Ledger
+    participant Notification
 
-- Stripe PaymentIntents
-- Stripe Charges
-- Stripe Refunds
-- Stripe Connect
-- Stripe Transfers
-- Stripe Webhooks
+    Customer->>API: Submit refund request
+    API->>RefundService: Validate request
+    RefundService->>Database: Load order and payment
+    RefundService->>RefundService: Calculate refundable amount
+    RefundService->>Database: Create refund request
+    API-->>Customer: Request created
 
-## Refund Types
+    Note over RefundService: Seller or administrator review
 
-### Full Refund
+    RefundService->>Database: Mark request approved
+    RefundService->>Stripe: Create refund
+    Stripe-->>RefundService: Refund processing
+    RefundService->>Database: Store Stripe refund ID
 
-Returns the entire refundable payment amount to the customer.
+    Stripe->>Webhook: Refund event
+    Webhook->>Database: Update final status
+    Webhook->>Ledger: Create financial entries
+    Webhook->>Notification: Send status notification
+```
+
+### 4.2 Refund Request Statuses
+
+| Status | Meaning |
+|---|---|
+| `requested` | Customer submitted the request |
+| `under_review` | Seller or administrator is reviewing |
+| `approved` | Request is approved for processing |
+| `processing` | Refund was submitted to Stripe |
+| `succeeded` | Stripe confirmed the refund |
+| `failed` | Refund processing failed |
+| `rejected` | Reviewer rejected the request |
+| `cancelled` | Request was cancelled before processing |
+| `requires_action` | Manual intervention is required |
+
+### 4.3 Recommended State Transitions
+
+```text
+requested
+├── under_review
+├── cancelled
+└── rejected
+
+under_review
+├── approved
+├── rejected
+└── cancelled
+
+approved
+├── processing
+└── failed
+
+processing
+├── succeeded
+├── failed
+└── requires_action
+
+failed
+├── processing
+├── requires_action
+└── cancelled
+```
+
+### 4.4 Order Status Synchronization
+
+| Refund Result | Order Status |
+|---|---|
+| No successful refund | `paid` |
+| Refunded amount is lower than payment amount | `partially_refunded` |
+| Refunded amount equals payment amount | `refunded` |
+
+---
+
+## 5. Refund Types
+
+### 5.1 Full Refund
+
+Returns the complete refundable payment amount.
 
 ```text
 Original payment: $100.00
 Refund amount:    $100.00
-Remaining amount: $0.00
+Remaining amount:   $0.00
 ```
 
-### Partial Refund
+### 5.2 Partial Refund
 
-Returns only part of the original payment amount.
+Returns only part of the original payment.
 
 ```text
 Original payment: $100.00
-Refund amount:    $30.00
-Remaining amount: $70.00
+Refund amount:     $30.00
+Remaining amount:  $70.00
 ```
 
-### Multiple Partial Refunds
+### 5.3 Multiple Partial Refunds
 
-Allows multiple refunds until the full refundable amount has been reached.
+Allows several partial refunds until the refundable balance reaches zero.
 
 ```text
 Original payment: $100.00
-First refund:     $20.00
-Second refund:    $30.00
-Remaining amount: $50.00
+First refund:      $20.00
+Second refund:     $30.00
+Remaining amount:  $50.00
 ```
 
-## Refund Reasons
+### 5.4 Item-Level Refund
+
+A refund can be linked to individual order items and quantities.
 
 ```text
-duplicate
-fraudulent
-requested_by_customer
-product_not_received
-product_damaged
-incorrect_product
-service_not_provided
-order_cancelled
-billing_error
-other
+Order Item A
+├── Purchased quantity: 3
+├── Refunded quantity:  1
+└── Remaining quantity: 2
 ```
 
-## Refund Statuses
+---
 
-```text
-requested
-under_review
-approved
-processing
-succeeded
-failed
-rejected
-cancelled
-requires_action
-```
+## 6. Business Rules
 
-## Refund Eligibility
+### 6.1 Refund Eligibility
 
-A refund request should be accepted only when:
+A refund request is eligible only when:
 
 - The order exists
-- The payment was completed successfully
-- The payment has not been fully refunded
+- The order belongs to the requester
+- The payment completed successfully
 - The requested amount is greater than zero
-- The requested amount does not exceed the refundable balance
-- The refund request is within the allowed refund period
-- The requester has permission to access the order
-- The order is not currently involved in an unresolved dispute
-- The refund request is not a duplicate
+- The requested amount does not exceed the refundable amount
+- The payment has not already been fully refunded
+- The request is within the configured refund window
+- The currency matches the original payment currency
+- The request does not duplicate an active refund
+- The order is not blocked by an unresolved dispute
+- The selected item quantities are valid
 
-## Refund Calculation
+### 6.2 Refund Reasons
 
-The maximum refundable amount should be calculated as:
+| Code | Description |
+|---|---|
+| `duplicate` | Customer was charged more than once |
+| `fraudulent` | Payment is suspected to be fraudulent |
+| `requested_by_customer` | General customer request |
+| `product_not_received` | Customer did not receive the product |
+| `product_damaged` | Product arrived damaged |
+| `incorrect_product` | Wrong product was delivered |
+| `service_not_provided` | Purchased service was not delivered |
+| `order_cancelled` | Order was cancelled |
+| `billing_error` | Incorrect amount or billing information |
+| `other` | Reason requires a custom description |
+
+### 6.3 Review Rules
+
+- Customers cannot approve their own requests
+- Sellers can review only their own orders
+- Administrators can review all requests
+- Approved amounts must be recalculated by the backend
+- A rejected request must contain a review reason
+- A processed refund cannot be cancelled
+- Manual overrides must be recorded in the audit log
+
+---
+
+## 7. Financial Calculation
+
+### 7.1 Refundable Amount
 
 ```text
-Refundable Amount =
-Original Payment Amount
+Refundable Amount
+=
+Original Captured Amount
 - Successful Refund Amount
-- Pending Refund Amount
+- Active Processing Refund Amount
 ```
 
 Example:
@@ -211,22 +398,75 @@ Example:
 ```text
 Original payment:          $150.00
 Successful refunds:         $40.00
-Pending refunds:            $20.00
+Processing refunds:         $20.00
 Maximum refundable amount:  $90.00
 ```
 
-All monetary values should be stored as integers in the smallest currency unit.
+### 7.2 Integer Money Storage
 
-Example:
+All monetary values must be stored in the smallest currency unit.
 
 ```text
 $10.00 = 1000 cents
 $49.99 = 4999 cents
 ```
 
-## Database Models
+Recommended type:
 
-### RefundRequest
+```ts
+type Money = {
+  amount: number;
+  currency: "usd";
+};
+```
+
+For very large values, use `bigint` or a decimal-safe database type.
+
+### 7.3 Payout-Eligible Balance
+
+```text
+Payout-Eligible Balance
+=
+Available Seller Balance
+- Pending Refund Reserve
+- Approved Refund Reserve
+- Dispute Reserve
+- Platform Risk Reserve
+```
+
+Example:
+
+```text
+Available seller balance: $1,000.00
+Pending refund reserve:     $150.00
+Dispute reserve:              $50.00
+Risk reserve:                $100.00
+Payout-eligible balance:     $700.00
+```
+
+---
+
+## 8. Data Model
+
+### 8.1 Entity Relationship
+
+```mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    USER ||--o{ REFUND_REQUEST : creates
+    SELLER_ACCOUNT ||--o{ ORDER : receives
+    ORDER ||--|| PAYMENT : has
+    ORDER ||--o{ ORDER_ITEM : contains
+    ORDER ||--o{ REFUND_REQUEST : receives
+    PAYMENT ||--o{ REFUND : contains
+    REFUND_REQUEST ||--o| REFUND : produces
+    REFUND_REQUEST ||--o{ REFUND_ITEM : includes
+    REFUND_REQUEST ||--o{ REFUND_EVIDENCE : contains
+    REFUND ||--o{ LEDGER_ENTRY : creates
+    REFUND_REQUEST ||--o{ AUDIT_LOG : records
+```
+
+### 8.2 `RefundRequest`
 
 ```text
 id
@@ -235,20 +475,23 @@ paymentId
 customerId
 sellerId
 requestedBy
-amount
+requestedAmount
+approvedAmount
 currency
 reason
 description
 status
 reviewedBy
+reviewNote
 reviewedAt
 approvedAt
 rejectedAt
+cancelledAt
 createdAt
 updatedAt
 ```
 
-### Refund
+### 8.3 `Refund`
 
 ```text
 id
@@ -260,13 +503,17 @@ amount
 currency
 status
 reason
+failureCode
 failureReason
+idempotencyKey
 processedAt
+succeededAt
+failedAt
 createdAt
 updatedAt
 ```
 
-### RefundItem
+### 8.4 `RefundItem`
 
 ```text
 id
@@ -279,19 +526,21 @@ createdAt
 updatedAt
 ```
 
-### RefundEvidence
+### 8.5 `RefundEvidence`
 
 ```text
 id
 refundRequestId
 fileUrl
+fileKey
 fileType
+fileSize
 description
 uploadedBy
 createdAt
 ```
 
-### LedgerEntry
+### 8.6 `LedgerEntry`
 
 ```text
 id
@@ -304,83 +553,60 @@ type
 amount
 currency
 balanceAfter
+reference
+metadata
 createdAt
 ```
 
-## Order Statuses
+### 8.7 `AuditLog`
 
 ```text
-pending
-processing
-paid
-partially_refunded
-refunded
-cancelled
-payment_failed
+id
+actorId
+actorRole
+action
+entityType
+entityId
+previousStatus
+newStatus
+metadata
+ipAddress
+userAgent
+createdAt
 ```
 
-An order should be marked as:
+---
 
-```text
-partially_refunded
-```
+## 9. API Design
 
-when the total successful refund amount is lower than the original payment amount.
+### 9.1 Endpoint Summary
 
-An order should be marked as:
+| Method | Endpoint | Access | Purpose |
+|---|---|---|---|
+| `POST` | `/api/orders/:orderId/refund-requests` | Customer | Create a refund request |
+| `GET` | `/api/orders/:orderId/refund-requests` | Customer, Seller, Admin | List requests for an order |
+| `GET` | `/api/refund-requests/:id` | Authorized user | Get request details |
+| `POST` | `/api/refund-requests/:id/cancel` | Customer, Admin | Cancel an eligible request |
+| `GET` | `/api/seller/refund-requests` | Seller | List seller requests |
+| `POST` | `/api/seller/refund-requests/:id/approve` | Seller | Approve a request |
+| `POST` | `/api/seller/refund-requests/:id/reject` | Seller | Reject a request |
+| `GET` | `/api/admin/refund-requests` | Admin | List all requests |
+| `POST` | `/api/admin/refund-requests/:id/approve` | Admin | Approve a request |
+| `POST` | `/api/admin/refund-requests/:id/reject` | Admin | Reject a request |
+| `POST` | `/api/admin/refunds` | Admin | Create a manual refund |
+| `POST` | `/api/admin/refunds/:id/retry` | Admin | Retry a failed refund |
+| `GET` | `/api/refunds/:id` | Authorized user | Get refund details |
+| `POST` | `/api/webhooks/stripe` | Stripe | Receive Stripe events |
 
-```text
-refunded
-```
-
-when the entire refundable payment amount has been returned.
-
-## API Endpoints
-
-### Customer Refund Requests
+### 9.2 Create Refund Request
 
 ```http
 POST /api/orders/:orderId/refund-requests
-GET  /api/orders/:orderId/refund-requests
-GET  /api/refund-requests/:refundRequestId
-POST /api/refund-requests/:refundRequestId/cancel
+Content-Type: application/json
+Idempotency-Key: refund-request-client-key
 ```
 
-### Seller Refund Management
-
-```http
-GET  /api/seller/refund-requests
-GET  /api/seller/refund-requests/:refundRequestId
-POST /api/seller/refund-requests/:refundRequestId/approve
-POST /api/seller/refund-requests/:refundRequestId/reject
-```
-
-### Admin Refund Management
-
-```http
-GET  /api/admin/refund-requests
-GET  /api/admin/refund-requests/:refundRequestId
-POST /api/admin/refund-requests/:refundRequestId/approve
-POST /api/admin/refund-requests/:refundRequestId/reject
-POST /api/admin/refunds
-```
-
-### Refund Records
-
-```http
-GET /api/refunds
-GET /api/refunds/:refundId
-```
-
-### Webhooks
-
-```http
-POST /api/webhooks/stripe
-```
-
-## Create Refund Request
-
-Example request:
+Request:
 
 ```json
 {
@@ -397,14 +623,14 @@ Example request:
 }
 ```
 
-Example response:
+Response:
 
 ```json
 {
   "id": "refund_request_123",
   "orderId": "order_123",
   "paymentId": "payment_123",
-  "amount": 3000,
+  "requestedAmount": 3000,
   "currency": "usd",
   "reason": "product_damaged",
   "status": "requested",
@@ -412,18 +638,23 @@ Example response:
 }
 ```
 
-## Approve Refund Request
+### 9.3 Approve Refund Request
 
-Example request:
+```http
+POST /api/admin/refund-requests/:id/approve
+Content-Type: application/json
+```
+
+Request:
 
 ```json
 {
   "approvedAmount": 3000,
-  "reviewNote": "Refund approved after reviewing customer evidence."
+  "reviewNote": "Approved after reviewing the submitted evidence."
 }
 ```
 
-Example response:
+Response:
 
 ```json
 {
@@ -435,17 +666,22 @@ Example response:
 }
 ```
 
-## Reject Refund Request
+### 9.4 Reject Refund Request
 
-Example request:
+```http
+POST /api/admin/refund-requests/:id/reject
+Content-Type: application/json
+```
+
+Request:
 
 ```json
 {
-  "reason": "The order was delivered correctly and no valid evidence was provided."
+  "reviewNote": "The delivery was verified and the evidence was insufficient."
 }
 ```
 
-Example response:
+Response:
 
 ```json
 {
@@ -455,141 +691,171 @@ Example response:
 }
 ```
 
-## Stripe Refund Integration
+### 9.5 Standard Error Response
 
-A refund can be created using the Stripe API:
+```json
+{
+  "error": {
+    "code": "REFUND_AMOUNT_EXCEEDS_AVAILABLE",
+    "message": "The requested amount exceeds the available refundable balance.",
+    "details": {
+      "requestedAmount": 5000,
+      "refundableAmount": 3000
+    }
+  }
+}
+```
+
+---
+
+## 10. Stripe Integration
+
+### 10.1 Basic Stripe Refund
 
 ```ts
 const refund = await stripe.refunds.create(
   {
     payment_intent: payment.stripePaymentIntentId,
-    amount: refundAmount,
+    amount: approvedAmount,
     reason: "requested_by_customer",
+    metadata: {
+      orderId: order.id,
+      paymentId: payment.id,
+      refundRequestId: refundRequest.id,
+    },
+  },
+  {
+    idempotencyKey: `refund:${refundRequest.id}`,
+  },
+);
+```
+
+### 10.2 Stripe Connect Refund
+
+For destination charges:
+
+```ts
+const refund = await stripe.refunds.create(
+  {
+    payment_intent: payment.stripePaymentIntentId,
+    amount: approvedAmount,
+    reverse_transfer: true,
+    refund_application_fee: true,
     metadata: {
       orderId: order.id,
       refundRequestId: refundRequest.id,
     },
   },
   {
-    idempotencyKey: `refund-${refundRequest.id}`,
-  }
+    idempotencyKey: `refund:${refundRequest.id}`,
+  },
 );
 ```
 
-The backend should never trust the frontend to determine the final refundable amount.
+### 10.3 Charge Model Considerations
 
-The refund amount must be recalculated and validated on the server before calling Stripe.
+| Charge Model | Refund Consideration |
+|---|---|
+| Direct charge | Refund is created on the connected account |
+| Destination charge | Platform may reverse the transfer |
+| Separate charges and transfers | Refund and transfer reversal are separate operations |
 
-## Stripe Connect Refunds
+The implementation must store the original charge model for every payment.
 
-For marketplace payments, the refund logic depends on how the original payment was created.
+### 10.4 Important Rule
 
-The platform may need to:
+The frontend must never decide the final refund amount.
 
-- Refund the customer payment
-- Reverse the seller transfer
-- Refund the application fee
-- Deduct the amount from the seller balance
-- Create a negative balance when funds are unavailable
+The backend must reload and validate:
 
-Example:
+- Payment status
+- Captured amount
+- Previous refunds
+- Processing refunds
+- Order ownership
+- Currency
+- Seller balance exposure
+- Charge model
 
-```ts
-const refund = await stripe.refunds.create({
-  payment_intent: payment.stripePaymentIntentId,
-  amount: refundAmount,
-  reverse_transfer: true,
-  refund_application_fee: true,
-});
-```
+---
 
-The correct configuration depends on whether the payment uses:
+## 11. Balance and Payout Protection
 
-- Direct charges
-- Destination charges
-- Separate charges and transfers
+### 11.1 Seller Balance Adjustment
 
-## Seller Balance Adjustment
-
-When a refund succeeds, the seller balance should be adjusted.
-
-Example:
+Successful refund with sufficient balance:
 
 ```text
 Seller available balance: $500.00
-Refund amount:             $50.00
+Refund adjustment:        -$50.00
 New available balance:    $450.00
 ```
 
-If the available balance is insufficient:
+Successful refund with insufficient balance:
 
 ```text
 Seller available balance:  $20.00
-Refund amount:              $50.00
-New seller balance:        -$30.00
+Refund adjustment:        -$50.00
+New seller balance:       -$30.00
 ```
 
-The system may recover a negative balance from:
+### 11.2 Negative Balance Recovery
+
+A negative seller balance may be recovered from:
 
 - Future sales
 - Pending balances
 - Unpaid payouts
-- Seller bank account debits, when supported
+- Connected account debits when supported
 - Manual seller repayment
+- Platform reserve funds
 
-## Payout Protection
+### 11.3 Refund Reservation
 
-Before processing a seller payout, the system should reserve funds for:
-
-- Pending refund requests
-- Approved refunds
-- Active disputes
-- Platform risk reserves
-- Chargeback exposure
-
-Example:
+Funds should be reserved when a request reaches a configured risk stage.
 
 ```text
-Seller available balance: $1,000.00
-Pending refunds:            $150.00
-Risk reserve:               $100.00
-Payout-eligible balance:    $750.00
+requested      → optional reserve
+under_review   → recommended reserve
+approved       → required reserve
+processing     → required reserve
+succeeded      → convert reserve to debit
+failed         → release reserve when safe
+rejected       → release reserve
+cancelled      → release reserve
 ```
 
-A payout should not include funds reserved for an active refund.
-
-## Ledger Entries
-
-Every refund should create immutable ledger entries.
-
-Example:
+### 11.4 Ledger Example
 
 ```text
-Payment completed:     +$100.00
-Platform fee:           -$10.00
-Seller earnings:        +$90.00
-Customer refund:        -$40.00
-Fee adjustment:          +$4.00
-Seller adjustment:      -$36.00
+Payment captured:          +$100.00
+Platform fee:               -$10.00
+Seller credit:              +$90.00
+Customer refund:            -$40.00
+Fee adjustment:              +$4.00
+Seller refund adjustment:   -$36.00
 ```
 
-Suggested ledger entry types:
+Recommended ledger entry types:
 
 ```text
 payment_credit
-platform_fee
+platform_fee_debit
 seller_credit
+refund_reserve
+refund_reserve_release
 refund_debit
-refund_fee_adjustment
+application_fee_refund
 transfer_reversal
 payout_debit
-balance_reserve
-balance_release
+manual_adjustment
 ```
 
-## Stripe Webhook Events
+---
 
-The application should process relevant Stripe events:
+## 12. Webhook Processing
+
+### 12.1 Relevant Stripe Events
 
 ```text
 refund.created
@@ -597,87 +863,198 @@ refund.updated
 refund.failed
 charge.refunded
 charge.refund.updated
-payment_intent.succeeded
 charge.dispute.created
 charge.dispute.closed
 ```
 
-Webhook signatures must always be verified before processing an event.
+### 12.2 Processing Pipeline
 
-## Webhook Processing
-
-Recommended webhook flow:
-
-```text
-Receive Stripe Event
-   │
-   ▼
-Verify Webhook Signature
-   │
-   ▼
-Check Event Idempotency
-   │
-   ▼
-Store Raw Event
-   │
-   ▼
-Process Refund Status
-   │
-   ├── Update Refund Record
-   ├── Update Refund Request
-   ├── Update Order Status
-   ├── Update Payment Totals
-   ├── Create Ledger Entries
-   └── Send Notification
+```mermaid
+flowchart TD
+    A[Receive Stripe Event] --> B[Verify Signature]
+    B --> C{Event already processed?}
+    C -- Yes --> D[Return 200]
+    C -- No --> E[Store Raw Event]
+    E --> F[Queue Processing Job]
+    F --> G[Update Refund Status]
+    G --> H[Update Payment Totals]
+    H --> I[Update Order Status]
+    I --> J[Create Ledger Entries]
+    J --> K[Adjust Seller Balance]
+    K --> L[Send Notification]
+    L --> M[Mark Event Processed]
 ```
 
-The application should store processed Stripe event IDs to prevent duplicate processing.
+### 12.3 Webhook Requirements
 
-## Idempotency
+- Verify the Stripe signature
+- Store the Stripe event ID
+- Store the raw event payload
+- Process each event idempotently
+- Return HTTP `2xx` quickly
+- Move business processing to a queue
+- Retry transient failures
+- Send unrecoverable events to a dead-letter queue
+- Never rely on frontend redirect pages for final status
 
-Refund operations must be idempotent.
+---
 
-The same refund request must not create multiple Stripe refunds when:
+## 13. Idempotency and Concurrency
 
-- The user submits the form more than once
-- An API request is retried
-- A background worker retries a failed job
-- A webhook is delivered multiple times
-- A network timeout occurs after Stripe processes the refund
+### 13.1 Idempotency Keys
 
-Recommended idempotency key:
+Recommended keys:
 
 ```text
-refund-{refundRequestId}
+Refund request:
+refund-request:{orderId}:{clientRequestId}
+
+Stripe refund:
+refund:{refundRequestId}
+
+Transfer reversal:
+transfer-reversal:{refundId}
+
+Ledger posting:
+ledger:refund:{refundId}:{entryType}
 ```
 
-## Refund Failure Handling
+### 13.2 Duplicate Protection
 
-A refund may fail because of:
+Prevent duplicate refunds caused by:
 
-- Insufficient connected account balance
-- Invalid payment reference
-- Refund amount exceeding the available amount
-- Payment method limitations
-- Closed or restricted connected account
-- Currency mismatch
-- Stripe API errors
-- Network errors
+- Double-clicked forms
+- Client retries
+- Network timeouts
+- Worker retries
+- Duplicate webhook delivery
+- Concurrent administrator actions
+
+### 13.3 Transaction Boundary
+
+The approval operation should lock or serialize access to the payment record.
+
+```text
+Begin transaction
+├── Lock payment/refund aggregate
+├── Recalculate refundable amount
+├── Validate approved amount
+├── Mark request approved
+├── Create local refund record
+├── Commit transaction
+└── Submit refund job
+```
+
+The Stripe request should be retriable using the stored idempotency key.
+
+---
+
+## 14. Failure Handling
+
+### 14.1 Common Failure Causes
+
+- Refund amount exceeds available amount
+- Payment reference is invalid
+- Currency does not match
+- Connected account is restricted
+- Transfer cannot be reversed
+- Stripe API is unavailable
+- Network timeout occurs
+- Database transaction fails
+- Webhook processing fails
+- Seller balance is insufficient
+
+### 14.2 Failure Response
 
 When a refund fails, the system should:
 
-- Store the failure reason
-- Mark the refund as failed
-- Preserve the original request
-- Release reserved funds when appropriate
-- Notify the administrator
-- Notify the seller
-- Allow safe retrying
-- Record the failure in the audit log
+1. Preserve the refund request
+2. Store the failure code and reason
+3. Mark the refund as `failed` or `requires_action`
+4. Avoid duplicate ledger postings
+5. Release reserved funds when appropriate
+6. Notify the administrator
+7. Notify the seller when relevant
+8. Allow a safe retry
+9. Record the action in the audit log
 
-## Notifications
+### 14.3 Retry Policy
 
-The system may send notifications when:
+```text
+Transient Stripe or network error
+├── Retry with exponential backoff
+├── Reuse the same idempotency key
+└── Stop after configured attempts
+
+Business validation error
+├── Do not automatically retry
+├── Mark requires_action
+└── Request administrator review
+```
+
+---
+
+## 15. Security and Audit
+
+### 15.1 Security Requirements
+
+- Require authentication for all private endpoints
+- Enforce role-based authorization
+- Verify order ownership
+- Validate all amounts on the backend
+- Validate file type and size for evidence uploads
+- Use signed URLs for private evidence
+- Verify Stripe webhook signatures
+- Apply request rate limits
+- Use idempotency keys
+- Encrypt sensitive data at rest
+- Never expose Stripe secret keys
+- Never store raw card information
+- Sanitize user-provided descriptions
+- Protect administrator endpoints with stronger controls
+
+### 15.2 Audit Actions
+
+```text
+refund_request_created
+refund_request_updated
+refund_request_cancelled
+refund_request_review_started
+refund_request_approved
+refund_request_rejected
+refund_created
+refund_succeeded
+refund_failed
+refund_retried
+refund_overridden
+refund_balance_reserved
+refund_balance_released
+refund_ledger_posted
+```
+
+### 15.3 Audit Record Example
+
+```json
+{
+  "actorId": "admin_123",
+  "actorRole": "admin",
+  "action": "refund_request_approved",
+  "entityType": "refund_request",
+  "entityId": "refund_request_123",
+  "previousStatus": "under_review",
+  "newStatus": "approved",
+  "metadata": {
+    "approvedAmount": 3000,
+    "currency": "usd"
+  }
+}
+```
+
+---
+
+## 16. Notifications
+
+### 16.1 Notification Events
 
 ```text
 refund_requested
@@ -687,233 +1064,313 @@ refund_rejected
 refund_processing
 refund_succeeded
 refund_failed
+refund_requires_action
 ```
 
-Notification channels may include:
+### 16.2 Notification Channels
 
-- Email
-- In-app notifications
-- Seller dashboard alerts
-- Admin dashboard alerts
-- Webhooks for external systems
+| Channel | Use Case |
+|---|---|
+| Email | Customer and seller status updates |
+| In-app | Dashboard notifications |
+| Admin alerts | Failed or high-risk refunds |
+| External webhook | Integration with external systems |
 
-## Security Requirements
+### 16.3 Notification Payload
 
-- Require authentication for all refund actions
-- Verify that customers own the affected order
-- Use role-based authorization
-- Validate refund amounts on the backend
-- Verify Stripe webhook signatures
-- Use idempotency keys
-- Prevent duplicate refund requests
-- Prevent refunds above the refundable balance
-- Store monetary values as integers
-- Record every status change
-- Maintain immutable ledger entries
-- Rate-limit refund request endpoints
-- Protect uploaded refund evidence
-- Never expose Stripe secret keys
-- Never store raw card information
-
-## Audit Log
-
-Every refund action should create an audit record.
-
-Suggested fields:
-
-```text
-id
-actorId
-actorRole
-action
-refundRequestId
-refundId
-previousStatus
-newStatus
-metadata
-ipAddress
-userAgent
-createdAt
+```json
+{
+  "event": "refund_succeeded",
+  "refundId": "refund_123",
+  "orderId": "order_123",
+  "amount": 3000,
+  "currency": "usd",
+  "occurredAt": "2026-07-31T08:00:00.000Z"
+}
 ```
 
-Example actions:
+---
 
-```text
-refund_request_created
-refund_request_cancelled
-refund_request_approved
-refund_request_rejected
-refund_created
-refund_succeeded
-refund_failed
-refund_retried
-refund_manually_updated
-```
-
-## Environment Variables
-
-Create a `.env.local` file:
-
-```env
-DATABASE_URL=
-
-REDIS_URL=
-
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-
-APP_URL=http://localhost:3000
-JWT_SECRET=
-
-REFUND_WINDOW_DAYS=30
-REFUND_AUTO_APPROVAL_LIMIT=5000
-```
-
-Do not commit environment variables or secret keys to the repository.
-
-## Recommended Project Structure
+## 17. Project Structure
 
 ```text
 src/
 ├── app/
 │   ├── orders/
+│   │   └── [orderId]/
+│   │       └── refunds/
 │   ├── refunds/
+│   │   └── [refundId]/
 │   ├── seller/
+│   │   └── refunds/
 │   ├── admin/
+│   │   └── refunds/
 │   └── api/
+│       ├── refund-requests/
+│       ├── refunds/
+│       └── webhooks/
+│
 ├── components/
-│   ├── refund-request-form/
-│   ├── refund-status/
-│   ├── refund-history/
-│   └── refund-review/
+│   └── refunds/
+│       ├── RefundRequestForm.tsx
+│       ├── RefundAmountInput.tsx
+│       ├── RefundItemSelector.tsx
+│       ├── RefundEvidenceUpload.tsx
+│       ├── RefundStatusBadge.tsx
+│       ├── RefundTimeline.tsx
+│       └── RefundReviewPanel.tsx
+│
 ├── modules/
 │   ├── auth/
 │   ├── orders/
 │   ├── payments/
 │   ├── refunds/
+│   │   ├── application/
+│   │   │   ├── create-refund-request.ts
+│   │   │   ├── approve-refund-request.ts
+│   │   │   ├── reject-refund-request.ts
+│   │   │   ├── cancel-refund-request.ts
+│   │   │   └── retry-refund.ts
+│   │   ├── domain/
+│   │   │   ├── refund.entity.ts
+│   │   │   ├── refund-request.entity.ts
+│   │   │   ├── refund-status.ts
+│   │   │   ├── refund-policy.ts
+│   │   │   └── refund-errors.ts
+│   │   ├── infrastructure/
+│   │   │   ├── refund.repository.ts
+│   │   │   ├── stripe-refund.gateway.ts
+│   │   │   └── refund.mapper.ts
+│   │   └── presentation/
+│   │       ├── refund.controller.ts
+│   │       ├── refund.schemas.ts
+│   │       └── refund.presenter.ts
 │   ├── balances/
 │   ├── ledger/
+│   ├── payouts/
 │   ├── notifications/
 │   └── webhooks/
+│
+├── workers/
+│   ├── refund-processing.worker.ts
+│   ├── stripe-webhook.worker.ts
+│   ├── notification.worker.ts
+│   └── reconciliation.worker.ts
+│
 ├── lib/
 │   ├── database.ts
 │   ├── redis.ts
-│   └── stripe.ts
-└── workers/
-    ├── refund.worker.ts
-    ├── notification.worker.ts
-    └── webhook.worker.ts
+│   ├── stripe.ts
+│   ├── logger.ts
+│   └── money.ts
+│
+└── tests/
+    ├── unit/
+    ├── integration/
+    └── e2e/
 ```
 
-## Local Development
+---
 
-Install dependencies:
+## 18. Environment Variables
+
+Create a `.env.local` file:
+
+```env
+# Application
+NODE_ENV=development
+APP_URL=http://localhost:3000
+JWT_SECRET=
+
+# Database
+DATABASE_URL=
+
+# Redis and workers
+REDIS_URL=
+
+# Stripe
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+# Refund configuration
+REFUND_WINDOW_DAYS=30
+REFUND_AUTO_APPROVAL_LIMIT=5000
+REFUND_MAX_RETRY_ATTEMPTS=5
+REFUND_RESERVE_ON_REQUEST=false
+REFUND_REQUIRE_SELLER_REVIEW=true
+
+# Evidence storage
+STORAGE_BUCKET=
+STORAGE_REGION=
+STORAGE_ACCESS_KEY=
+STORAGE_SECRET_KEY=
+
+# Notifications
+EMAIL_FROM=
+EMAIL_PROVIDER_API_KEY=
+```
+
+Never commit `.env` files or secret keys to the repository.
+
+---
+
+## 19. Local Development
+
+### 19.1 Install Dependencies
 
 ```bash
 npm install
 ```
 
-Start PostgreSQL and Redis:
+### 19.2 Start Infrastructure
 
 ```bash
 docker compose up -d
 ```
 
-Run database migrations:
+### 19.3 Run Database Migrations
 
 ```bash
 npm run db:migrate
 ```
 
-Start the development server:
+### 19.4 Start the Application
 
 ```bash
 npm run dev
 ```
 
-## Testing Stripe Webhooks
-
-Forward Stripe events to the local application:
+### 19.5 Forward Stripe Webhooks
 
 ```bash
 stripe listen --forward-to localhost:3000/api/webhooks/stripe
 ```
 
-Trigger a test refund event:
+### 19.6 Trigger a Test Event
 
 ```bash
 stripe trigger charge.refunded
 ```
 
-## Testing Requirements
+---
 
-The Refund module should include tests for:
+## 20. Testing Strategy
 
-- Full refunds
-- Partial refunds
-- Multiple partial refunds
-- Refund amount validation
-- Duplicate refund prevention
-- Unauthorized refund requests
-- Seller approval and rejection
-- Stripe API failures
-- Webhook retries
-- Duplicate webhook delivery
-- Seller balance adjustments
-- Negative seller balances
-- Payout reserve calculations
-- Order status updates
-- Concurrent refund requests
+### 20.1 Unit Tests
 
-## Development Roadmap
+- Refundable amount calculation
+- Refund eligibility rules
+- State transition validation
+- Item-level refund calculation
+- Payout reserve calculation
+- Negative balance calculation
+- Ledger entry generation
 
-### Phase 1 — Basic Refunds
+### 20.2 Integration Tests
+
+- Create refund request
+- Approve and reject workflows
+- Stripe refund creation
+- Stripe Connect transfer reversal
+- Webhook processing
+- Duplicate webhook handling
+- Queue retry handling
+- Database transaction rollback
+
+### 20.3 End-to-End Tests
+
+- Customer submits a full refund
+- Customer submits a partial refund
+- Seller approves a request
+- Seller rejects a request
+- Administrator creates a manual refund
+- Refund succeeds through webhook
+- Refund fails and is retried
+- Seller payout excludes reserved funds
+
+### 20.4 Critical Concurrency Tests
+
+- Two refunds are approved for the same payment simultaneously
+- The same approval request is submitted twice
+- Stripe times out after creating the refund
+- The same webhook is delivered multiple times
+- Refund and payout jobs execute at the same time
+
+---
+
+## 21. Development Roadmap
+
+### Phase 1 — Foundation
 
 - Add refund database models
-- Create customer refund request form
-- Validate refundable amounts
+- Add refund request API
+- Add eligibility validation
+- Add full and partial refund support
+- Add basic customer status page
+
+### Phase 2 — Review Workflow
+
+- Add seller review dashboard
+- Add administrator dashboard
+- Add approval and rejection actions
+- Add evidence uploads
+- Add notifications
+
+### Phase 3 — Stripe and Financial Integration
+
 - Integrate Stripe Refunds
-- Add refund status tracking
-- Handle Stripe refund webhooks
-
-### Phase 2 — Refund Review
-
-- Add seller refund dashboard
-- Add admin refund dashboard
-- Implement approval and rejection
-- Add refund evidence uploads
-- Add customer and seller notifications
-
-### Phase 3 — Financial Adjustments
-
+- Add Stripe Connect reversal logic
+- Add application fee adjustment
 - Add seller balance deductions
-- Add platform fee adjustments
-- Add transfer reversals
-- Add payout reserves
-- Add immutable refund ledger entries
+- Add refund reserves
+- Add immutable ledger entries
 
-### Phase 4 — Production Readiness
+### Phase 4 — Reliability
 
-- Add refund retry workers
-- Add audit logging
+- Add background workers
+- Add retry and dead-letter queues
+- Add webhook idempotency
+- Add concurrency protection
+- Add reconciliation jobs
 - Add monitoring and alerts
+
+### Phase 5 — Production Readiness
+
 - Add fraud and abuse controls
-- Add reconciliation reports
+- Add advanced audit reports
+- Add refund analytics
+- Add administrator overrides
 - Add automated integration tests
+- Add operational runbooks
 
-## Important Design Principles
+---
 
-The frontend should never directly determine whether a refund is valid.
+## 22. Design Principles
 
-All refund amounts, payment statuses, order ownership, seller balances, and refund eligibility rules must be validated by the backend.
+1. **The backend is authoritative.**  
+   Refund amounts, payment states, order ownership, and eligibility must always be validated by the backend.
 
-Frontend success pages must not be treated as confirmation that a refund succeeded.
+2. **Stripe webhooks confirm final status.**  
+   Frontend redirects and initial API responses must not be treated as final financial confirmation.
 
-Stripe webhooks should be treated as the trusted source for final asynchronous refund status updates.
+3. **Every financial movement is recorded.**  
+   Refunds, reserves, reversals, fees, and balance adjustments must create immutable ledger entries.
 
-Every financial change should be represented by an immutable ledger entry.
+4. **Every external operation is idempotent.**  
+   Stripe refunds, transfer reversals, webhook processing, and ledger postings must tolerate retries.
+
+5. **Refund and payout logic must be connected.**  
+   Funds reserved for refunds must never be included in seller payouts.
+
+6. **State transitions must be explicit.**  
+   Invalid or skipped refund states should be rejected by the domain layer.
+
+7. **Failures must be recoverable.**  
+   The system must preserve enough data to safely retry, reconcile, or manually resolve failed operations.
+
+---
 
 ## License
 
-This project is intended for educational and demonstration purposes.
+This project is intended for educational, demonstration, and architecture prototyping purposes.
