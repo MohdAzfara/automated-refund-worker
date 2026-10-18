@@ -1,0 +1,28 @@
+{
+  "name": "automated-refund-worker",
+  "version": "1.0.0",
+  "description": "Asynchronous background job worker for handling secure e-commerce refund pipelines and fraud audits.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "fintech",
+    "refunds",
+    "worker",
+    "background-jobs",
+    "fraud-audit",
+    "typescript"
+  ],
+  "author": "Mohd Azfar",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "bullmq": "^5.1.0",
+    "ioredis": "^5.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
