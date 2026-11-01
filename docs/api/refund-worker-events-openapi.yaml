@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: Automated Refund Worker Orchestration API
+  version: 1.0.0
+  description: Asynchronous refund job ingestion, fraud velocity auditing, and connected vendor reversal saga API.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+paths:
+  /v1/refund-jobs:
+    post:
+      summary: Enqueue an idempotent full or partial refund saga job
+      operationId: enqueueRefundJob
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - captureId
+                - connectedVendorId
+                - capturedAmountMinor
+                - requestedRefundMinor
+                - currency
+              properties:
+                captureId:
+                  type: string
+                  example: "cap_checkout_88412"
+                connectedVendorId:
+                  type: string
+                  example: "acct_vendor_99481"
+                capturedAmountMinor:
+                  type: integer
+                  minimum: 100
+                  example: 100000
+                requestedRefundMinor:
+                  type: integer
+                  minimum: 1
+                  example: 25000
+                currency:
+                  type: string
+                  enum: ["USD", "EUR", "GBP", "SGD"]
+                reasonCode:
+                  type: string
+                  enum: ["CUSTOMER_RETURN", "DUPLICATE_CHARGE", "MERCHANT_ADJUSTMENT", "FRAUD_MITIGATION"]
+      responses:
+        "202":
+          description: Refund job passed initial cap validation and entered asynchronous saga queue.
+        "409":
+          description: Idempotency-Key conflict or concurrent refund lock contention.
+        "422":
+          description: Requested refund exceeds remaining refundable capture balance or failed fraud gate.
