@@ -1,0 +1,5 @@
+# Security Vulnerability Disclosure Contact (RFC 9116)
+Contact: mailto:lumilieju@hotmail.com
+Preferred-Languages: en
+Policy: https://github.com/MohdAzfara/automated-refund-worker/blob/main/SECURITY.md
+Acknowledgments: https://github.com/MohdAzfara/automated-refund-worker/security/advisories
