@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 RFC 9116 Security Vulnerability Disclosure
+    url: https://github.com/MohdAzfara/automated-refund-worker/blob/main/SECURITY.md
+    about: Please DO NOT report security or ledger vulnerabilities in public issues. Use our private disclosure policy.
+  - name: 📐 Architecture Decision Records (ADRs)
+    url: https://github.com/MohdAzfara/automated-refund-worker/tree/main/docs/adr
+    about: Review foundational architectural decisions for cumulative refund caps, vendor clawbacks, and fraud gates.
