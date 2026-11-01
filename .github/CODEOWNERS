@@ -1,0 +1,8 @@
+# Default owners for everything in the repository
+*       @MohdAzfara
+
+# Critical Financial Refund, Fraud Audit & Saga Reversal Paths
+/src/                   @MohdAzfara
+/docs/threat-model.md   @MohdAzfara
+/SECURITY.md            @MohdAzfara
+/.github/workflows/     @MohdAzfara
