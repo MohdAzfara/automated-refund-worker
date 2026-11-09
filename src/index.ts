@@ -75,3 +75,7 @@ worker.processRefundJob({
   reason: 'Customer requested return',
   idempotencyKey: 'idem_refund_xyz987'
 }).then(res => console.log('Refund Worker Result:', res));
+
+export * from './concurrency/saga-distributed-lock';
+export * from './crypto/refund-attestation-sealer';
+export * from './ledger/contra-journal-emitter';
